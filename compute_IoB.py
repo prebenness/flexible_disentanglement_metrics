@@ -9,31 +9,32 @@ import argparse
 
 #Load the data directory and saving path
 parser = argparse.ArgumentParser()
-parser.add_argument('--root', type=str, default='', help='Path to the data file.')
+parser.add_argument('--root', type=str, required=True, help='Path to the data file.')
 parser.add_argument('--gpu', type=str, default='0', help='GPU to use.')
-parser.add_argument('--save', type=str, default='', help='Path to save the results.')
+parser.add_argument('--save', type=str, default='output', help='Path to save the results.')
 opts = parser.parse_args()
 
 gpu_num = opts.gpu
-dir_root = opts.root + '/'
+dir_root = os.path.abspath(opts.root)
 
 device = torch.device("cuda:"+gpu_num if torch.cuda.is_available() else "cpu")
-dir_root = opts.root + '/'
 train_cont_root = 'content_train.npz'
 train_sty_root = 'style_train.npz'
 train_img_root = 'images_train.npz'
 test_cont_root = 'content_test.npz'
 test_sty_root = 'style_test.npz'
 test_img_root = 'images_test.npz'
-result_directory = opts.save+'IoB_result.txt'
+
+result_dir = os.path.abspath(opts.save)
+result_file = os.path.join(result_dir, 'IoB_result.txt')
 
 #Load the data to train IoB models
-train_content = np.load(dir_root+train_cont_root)['arr_0']
-train_style = np.load(dir_root+train_sty_root)['arr_0']
-train_images = np.load(dir_root+train_img_root)['arr_0']
-test_content = np.load(dir_root+test_cont_root)['arr_0']
-test_style = np.load(dir_root+test_sty_root)['arr_0']
-test_images = np.load(dir_root+test_img_root)['arr_0']
+train_content = np.load(os.path.join(dir_root, train_cont_root))['arr_0']
+train_style = np.load(os.path.join(dir_root, train_sty_root))['arr_0']
+train_images = np.load(os.path.join(dir_root, train_img_root))['arr_0']
+test_content = np.load(os.path.join(dir_root, test_cont_root))['arr_0']
+test_style = np.load(os.path.join(dir_root, test_sty_root))['arr_0']
+test_images = np.load(os.path.join(dir_root, test_img_root))['arr_0']
 
 train_num_samples = train_images.shape[0]
 test_num_samples = test_images.shape[0]
@@ -176,7 +177,7 @@ print('IoBc is %f, IoBs is %f' % (IoBc, IoBs))
 
 #Save results
 print('IoBc is %f, IoBs is %f' % (IoBc, IoBs))
-file = open(result_directory, 'a')
+file = open(result_file, 'a')
 file.write('\nIoB metric for ' + dir_root + ':\n')
 file.write('MSE Content Bias: ' + str(mse_cont_bias) + '\n')
 file.write('MSE Content: ' + str(mse_cont) + '\n')

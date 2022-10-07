@@ -4,19 +4,22 @@ import os
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--root', type=str, default='', help='Path to the data file.')
-parser.add_argument('--save', type=str, default='', help='Path to save the results.')
+parser.add_argument('--root', type=str, required=True, help='Path to the data file.')
+parser.add_argument('--save', type=str, default='output', help='Path to save the results.')
 opts = parser.parse_args()
 
 #Load the data directory and saving path
-dir_root = opts.root + '/'
+dir_root = os.path.abspath(opts.root)
 cont_root = 'content_test.npz'
 sty_root = 'style_test.npz'
 img_root = 'images_test.npz'
-result_directory = opts.save+'DC_result.txt'
-content = np.load(dir_root+cont_root)['arr_0']
-style = np.load(dir_root+sty_root)['arr_0']
-image = np.load(dir_root+img_root)['arr_0']
+
+os.makedirs(os.path.abspath(opts.save), exist_ok=True)
+result_directory = os.path.join(opts.save,'DC_result.txt')
+
+content = np.load(os.path.join(dir_root, cont_root))['arr_0']
+style = np.load(os.path.join(dir_root, sty_root))['arr_0']
+image = np.load(os.path.join(dir_root, img_root))['arr_0']
 
 #Distance correlation test
 print('Start distance correlation test on content and style...')
