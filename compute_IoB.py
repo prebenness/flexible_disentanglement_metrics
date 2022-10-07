@@ -1,9 +1,6 @@
 import numpy as np
-from torch import nn
 import torch
-import torch.nn.functional as F
-import torch.nn.init as init
-from metrics.IoB_models import Cont_Trainer, Sty_Trainer
+from metrics.IoB_models import TensorReconstructor, VectorReconstructor
 import os
 import argparse
 
@@ -43,146 +40,139 @@ test_num_samples = test_images.shape[0]
 train_content = torch.from_numpy(train_content)
 train_style = torch.from_numpy(train_style)
 train_images = torch.from_numpy(train_images)
-train_Bias_content = torch.ones_like(train_content)
-train_Bias_style = torch.ones_like(train_style)
+train_content_bias = torch.ones_like(train_content)
+train_style_bias = torch.ones_like(train_style)
 
 test_content = torch.from_numpy(test_content)
 test_style = torch.from_numpy(test_style)
 test_images = torch.from_numpy(test_images)
-test_Bias_content = torch.ones_like(test_content)
-test_Bias_style = torch.ones_like(test_style)
+test_content_bias = torch.ones_like(test_content)
+test_style_bias = torch.ones_like(test_style)
 
-#Train IoB models
-#define the Content AutoEncoders
-epoch = 40
+num_epochs = 40
 batch_size = 10
-num_itr = int(train_num_samples / batch_size)
+num_itr_train = int(train_num_samples / batch_size)
 
-Content_AE = Cont_Trainer()
 
-#Train the Content AutoEncoder
-print('Start training Content Autoencoder...')
-Content_AE.to(device)
-for ep in range(epoch):
-    index = torch.randperm(train_num_samples)
-    for i in range(num_itr):
-        content = train_content[index[i*batch_size:(i+1)*batch_size],:,:,:].float().to(device)
-        target = train_images[index[i*batch_size:(i+1)*batch_size],:,:,:].float().to(device)
-        MSE_loss = Content_AE.AE_update(content, target)
-    print('Epoch: %d, MSE_loss: %f'% (ep, MSE_loss))
+def train_tensor_reconstructor(repr, target):
+    reconstructor = TensorReconstructor()
+    reconstructor.to(device)
+    for epoch in range(num_epochs):
+        index = torch.randperm(train_num_samples)
+        for i in range(num_itr_train):
+            repr_batch = repr[index[i * batch_size:(i+1)*batch_size], :, :, :].float().to(device)
+            target_batch = target[index[i * batch_size:(i+1)*batch_size], :, :, :].float().to(device)
+            mse_loss = reconstructor.AE_update(repr_batch, target_batch)
+        print(f'Epoch {epoch}, MSE: {mse_loss}')
+    
+    return reconstructor
+
+
+def train_vector_reconstructor(repr, target):
+    reconstructor = VectorReconstructor(input_dim=repr.shape[-1], output_dim=target.shape[-1])
+    reconstructor.to(device)
+    for epoch in range(num_epochs):
+        index = torch.randperm(train_num_samples)
+        for i in range(num_itr_train):
+            repr_batch = repr[index[i * batch_size:(i+1)*batch_size], :].float().to(device)
+            target_batch = target[index[i * batch_size:(i+1)*batch_size], :, :, :].float().to(device)
+            mse_loss = reconstructor.DE_update(repr_batch, target_batch)
+        print(f'Epoch {epoch}, MSE: {mse_loss}')
+    
+    return reconstructor
+
+
+def test_tensor_reconstructor(model, repr, target):
+    with torch.no_grad():
+        model.to(device)
+        mse_tot = 0
+        for i in range(target.shape[0]):
+            repr_batch = repr[i:i+1, :, :, :].float().to(device)
+            target_batch = target[i:i+1, :, :, :].float().to(device)
+            mse_loss = model.test(repr_batch, target_batch)   
+            mse_tot += mse_loss
+
+        mse_av = mse_tot / target.shape[0]
+        print(f'Test loss MSE: {mse_av}')
+
+    return mse_av
+
+
+def test_vector_reconstructor(model, repr, target):
+    with torch.no_grad():
+        model.to(device)
+        mse_tot = 0
+        for i in range(target.shape[0]):
+            repr_batch = repr[i:i+1, :].float().to(device)
+            target_batch = target[i:i+1, :, :, :].float().to(device)
+            mse_loss = model.test(repr_batch, target_batch)   
+            mse_tot += mse_loss
+
+        mse_av = mse_tot / target.shape[0]
+        print(f'Test loss MSE: {mse_av}')
+
+    return mse_av
+
+
+#Train the content AutoEncoder
+## Determine whether to use vector or tensor reconstructor
+content_trainer = train_vector_reconstructor if train_content.dim() == 2 else train_tensor_reconstructor
+
+print('Start training content Autoencoder...')
+content_reconstructor = content_trainer(train_content, train_images)
 print('Content Autoencoder is trained!')
 
+print('Start training content bias Autoencoder...')
+content_bias_reconstructor = content_trainer(train_content_bias, train_images)
+print('Content bias Autoencoder is trained!')
 
-Bias_AE = Cont_Trainer()
-#Train the Content Biase AutoEncoder
-print('Start training Content Bias Autoencoder...')
-Bias_AE.to(device)
-for ep in range(epoch):
-    index = torch.randperm(train_num_samples)
-    for i in range(num_itr):
-        content = train_Bias_content[index[i*batch_size:(i+1)*batch_size],:,:,:].float().to(device)
-        target = train_images[index[i*batch_size:(i+1)*batch_size],:,:,:].float().to(device)
-        MSE_loss = Bias_AE.AE_update(content, target)
-    print('Epoch: %d, MSE_loss: %f'% (ep, MSE_loss))
-print('Content Bias Autoencoder is trained!')
-
-Bias_DE = Sty_Trainer()
-#Train the Bias Decoder
+#Train the style Decoder
 print('----------------------------------------')
-print('Start training Bias Decoder...')
-Bias_DE.to(device)
-for ep in range(epoch):
-    index = torch.randperm(train_num_samples)
-    for i in range(num_itr):
-        const_style = train_Bias_style[index[i*batch_size:(i+1)*batch_size],:].float().to(device)
-        target = train_images[index[i*batch_size:(i+1)*batch_size],:,:,:].float().to(device)
-        MSE_loss = Bias_DE.DE_update(const_style, target)
-    print('Epoch: %d, MSE_loss: %f'% (ep, MSE_loss))
-print('Bias Decoder is trained!')
+style_trainer = train_vector_reconstructor if train_style.dim() == 2 else train_tensor_reconstructor
 
+print('Start training style Autoencoder...')
+style_reconstructor = style_trainer(train_style, train_images)
+print('Style Autoencoder is trained!')
 
-Style_DE = Sty_Trainer()
-#Train the Style Decoder
+print('Start training style bias Autoencoder...')
+style_bias_reconstructor = style_trainer(train_style_bias, train_images)
+print('Style bias autoencoder is trained!')
+
+# Test content Autoencoder
 print('----------------------------------------')
-print('Start training Style Decoder...')
-Style_DE.to(device)
-loss = []
-for ep in range(epoch):
-    index = torch.randperm(train_num_samples)
-    for i in range(num_itr):
-        style = train_style[index[i*batch_size:(i+1)*batch_size]].float().to(device)
-        target = train_images[index[i*batch_size:(i+1)*batch_size],:,:,:].float().to(device)
-        MSE_loss = Style_DE.DE_update(style, target)
-        loss.append(MSE_loss)
-    print('Epoch: %d, MSE_loss: %f'% (ep, MSE_loss))
-print('Style Decoder is trained!')
+content_tester = test_vector_reconstructor if test_content.dim() == 2 else test_tensor_reconstructor
 
+print('Start testing content Autoencoder...')
+content_loss = content_tester(content_reconstructor, test_content, test_images)
+print('Content Autoencoder is tested!')
 
-#IoB Test
-#calculate the test MSE losses
-with torch.no_grad():
-    batch_size = 1
-    num_itr = int(test_num_samples / batch_size)
-    print('Start testing Content Autoencoder...')
-    Content_AE.to(device)
-    mse_cont = 0
-    for i in range(num_itr):
-        content = test_content[i * batch_size:(i + 1) * batch_size, :, :, :].float().to(device)
-        target = test_images[i * batch_size:(i + 1) * batch_size, :, :, :].float().to(device)
-        MSE_loss = Content_AE.test(content, target)
-        mse_cont += MSE_loss
-    mse_cont /= test_num_samples
-    print('Content Autoencoder MSE_loss: %f' % (mse_cont))
-    print('Content Autoencoder is tested!')
+print('Start testing content bias Autoencoder...')
+content_bias_loss = content_tester(content_bias_reconstructor, test_content_bias, test_images)
+print('Content bias Autoencoder is tested!')
 
-    print('Start testing Content Bias Autoencoder...')
-    Bias_AE.to(device)
-    mse_cont_bias = 0
-    for i in range(num_itr):
-        content = test_Bias_content[i * batch_size:(i + 1) * batch_size, :, :, :].float().to(device)
-        target = test_images[i * batch_size:(i + 1) * batch_size, :, :, :].float().to(device)
-        MSE_loss = Bias_AE.test(content, target)
-        mse_cont_bias += MSE_loss
-    mse_cont_bias /= test_num_samples
-    print('Content Bias Autoencoder MSE_loss: %f' % (mse_cont_bias))
-    print('Content Bias Autoencoder is tested!')
+# Test style autoencoder
+print('----------------------------------------')
+style_tester = test_vector_reconstructor if test_style.dim() == 2 else test_tensor_reconstructor
 
-    print('Start testing Style Decoder...')
-    Style_DE.to(device)
-    mse_sty = 0
-    for i in range(num_itr):
-        style = test_style[i * batch_size:(i + 1) * batch_size, :].float().to(device)
-        target = test_images[i * batch_size:(i + 1) * batch_size, :, :, :].float().to(device)
-        MSE_loss = Style_DE.test(style, target)
-        mse_sty += MSE_loss
-    mse_sty /= test_num_samples
-    print('Style Decoder MSE_loss: %f' % (mse_sty))
-    print('Style Decoder is tested!')
+print('Start testing Style Autoencoder...')
+style_loss = style_tester(style_reconstructor, test_style, test_images)
+print('Style Autoencoder is tested!')
 
-    print('Start testing Bias Decoder...')
-    Bias_DE.to(device)
-    mse_sty_bias = 0
-    for i in range(num_itr):
-        const_style = test_Bias_style[i * batch_size:(i + 1) * batch_size, :].float().to(device)
-        target = test_images[i * batch_size:(i + 1) * batch_size, :, :, :].float().to(device)
-        MSE_loss = Bias_DE.test(const_style, target)
-        mse_sty_bias += MSE_loss
-    mse_sty_bias /= test_num_samples
-    print('Bias Decoder MSE_loss: %f' % (mse_sty_bias))
-    print('Bias Decoder is tested!')
+print('Start testing style bias Autoencoder...')
+style_bias_loss = style_tester(style_bias_reconstructor, test_style_bias, test_images)
+print('Style bias Autoencoder is tested!')
 
-IoBc = mse_cont_bias / mse_cont
-IoBs = mse_sty_bias / mse_sty
-print('IoBc is %f, IoBs is %f' % (IoBc, IoBs))
+# Store results
+IoBc = content_bias_loss / content_loss
+IoBs = style_bias_loss / style_loss
 
-#Save results
-print('IoBc is %f, IoBs is %f' % (IoBc, IoBs))
+print(f'IoBc is {IoBc}, IoBs is {IoBs}')
 file = open(result_file, 'a')
 file.write('\nIoB metric for ' + dir_root + ':\n')
-file.write('MSE Content Bias: ' + str(mse_cont_bias) + '\n')
-file.write('MSE Content: ' + str(mse_cont) + '\n')
-file.write('MSE Style Bias: ' + str(mse_sty_bias) + '\n')
-file.write('MSE Style: ' + str(mse_sty) + '\n')
+file.write('MSE Content Bias: ' + str(content_bias_loss) + '\n')
+file.write('MSE Content: ' + str(content_loss) + '\n')
+file.write('MSE Style Bias: ' + str(style_bias_loss) + '\n')
+file.write('MSE Style: ' + str(style_loss) + '\n')
 file.write('IoBc: ' + str(IoBc) + '\n')
 file.write('IoBs: ' + str(IoBs) + '\n')
 file.close()

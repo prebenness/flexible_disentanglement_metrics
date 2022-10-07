@@ -1,14 +1,14 @@
-import numpy as np
 from torch import nn
 import torch
-import torch.nn.functional as F
 import torch.nn.init as init
+
+from metrics.utils import is_power_of_2
 
 #Content
 #Create content trainer
-class Cont_Trainer(nn.Module):
+class TensorReconstructor(nn.Module):
     def __init__(self):
-        super(Cont_Trainer, self).__init__()
+        super(TensorReconstructor, self).__init__()
         lr = 0.0001
         self.AE = AutoEncoder()
         self.print_network(self.AE, 'AutoEncoder')
@@ -96,7 +96,6 @@ class Conv2dBlock(nn.Module):
         self.norm = nn.InstanceNorm2d(norm_dim, affine=True)
 
         #Initialize activation
-        #Initialize activation
         if relu:
             self.activation = nn.LeakyReLU(0.2, inplace=True)
         else:
@@ -135,11 +134,14 @@ class UpConv2dBlock(nn.Module):
 
 #Style
 #Create style trainer
-class Sty_Trainer(nn.Module):
-    def __init__(self):
-        super(Sty_Trainer, self).__init__()
+class VectorReconstructor(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        if not is_power_of_2(output_dim):
+            raise ValueError(f'Ouput dimension {output_dim} must be power of 2')
+
+        super(VectorReconstructor, self).__init__()
         lr = 0.0001
-        self.DE = Decoder()
+        self.DE = Decoder(input_dim=input_dim, output_dim=output_dim)
         self.print_network(self.DE, 'Decoder')
         #Setup the optimizers
         beta1 = 0.5
@@ -186,31 +188,38 @@ class Sty_Trainer(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self):
+    def __init__(self, input_dim, output_dim):
         super(Decoder, self).__init__()
         self.model = []
         self.liner = []
-        self.upsample = "nearest"
-        self.h = 128
-        self.w = 128
-        dim = 256
-        input_dim = 8
-        output_dim = 3
-        #Linear layer layer
+        self.latent_dim = 32
+        self.input_dim = input_dim
+        output_channels = 3
+        #Linear layers
+        ## Start upsampling from 8x8 image
         self.liner = nn.Sequential(
-            nn.Linear(8, 256),
-            nn.Linear(256, 256*4*4),
-            nn.Linear(256*4*4, 256*8*8),
+            nn.Linear(input_dim, self.latent_dim),
+            nn.Linear(self.latent_dim, self.latent_dim * 4 * 4),
+            nn.Linear(self.latent_dim * 4 * 4, self.latent_dim * 8 * 8),
         )
-        #Upsampling blocks
-        for i in range(4):
-            self.model += [UpConv2dBlock(dim, dim // 2, 4, 2, 1)]
-            dim //= 2
 
-        self.model += [Conv2dBlock(dim, output_dim, 7, 1, 3, relu=False)]
+        #Upsampling blocks
+        internal_dim = self.latent_dim
+        i = 1
+        while True:      
+            self.model += [UpConv2dBlock(internal_dim, internal_dim // 2, 4, 2, 1)]
+            internal_dim = self.latent_dim // 2 ** i
+
+            # Upsample until desired output_dim is reached
+            if 8 * 2 ** i >= output_dim:
+                break
+
+            i += 1
+
+        self.model += [Conv2dBlock(internal_dim, output_channels, 7, 1, 3, relu=False)]
         self.model = nn.Sequential(*self.model)
 
     def forward(self, x):
         liner_feature = self.liner(x)
-        liner_feature = liner_feature.view(liner_feature.size(0), 256, 8, 8)
+        liner_feature = liner_feature.view(liner_feature.size(0), self.latent_dim, 8, 8)
         return self.model(liner_feature)
