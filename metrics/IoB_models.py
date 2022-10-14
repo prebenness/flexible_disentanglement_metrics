@@ -1,5 +1,6 @@
 from torch import nn
 import torch
+import numpy as np
 import torch.nn.init as init
 
 from metrics.utils import is_power_of_2
@@ -136,10 +137,18 @@ class UpConv2dBlock(nn.Module):
 #Create style trainer
 class VectorReconstructor(nn.Module):
     def __init__(self, input_dim, output_dim):
-        if not is_power_of_2(output_dim):
-            raise ValueError(f'Ouput dimension {output_dim} must be power of 2')
-
         super(VectorReconstructor, self).__init__()
+
+        # Pad targets up to next power of 2 and set this as new output dim
+        new_output_dim = 2 ** np.ceil(np.log2(output_dim))
+        new_output_dim = int(new_output_dim)
+
+        self.output_dim = new_output_dim
+        target_padding = new_output_dim - output_dim
+        ## left, right, top, bottom
+        pad = (target_padding, 0, target_padding, 0)
+        self.target_padder = nn.ZeroPad2d(pad)
+
         lr = 0.0001
         self.DE = Decoder(input_dim=input_dim, output_dim=output_dim)
         self.print_network(self.DE, 'Decoder')
@@ -151,6 +160,7 @@ class VectorReconstructor(nn.Module):
         self.DE.apply(self.initialize_weights)
 
     def l2_criterion(self, inp, target):
+        target = self.target_padder(target)
         return torch.mean(torch.abs(inp - target) ** 2)
 
     def initialize_weights(self, m):
@@ -165,6 +175,9 @@ class VectorReconstructor(nn.Module):
 
     def test(self, train_input, ori_images):
         self.eval()
+
+        ori_images = self.target_padder(ori_images)
+
         reconstruction = self.DE(train_input)
         mse = self.l2_criterion(reconstruction, ori_images)
         self.train()
@@ -192,18 +205,17 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.model = []
         self.liner = []
-        self.latent_dim = 32
+        self.latent_dim = 256
         self.input_dim = input_dim
         output_channels = 3
         #Linear layers
-        ## Start upsampling from 8x8 image
         self.liner = nn.Sequential(
             nn.Linear(input_dim, self.latent_dim),
             nn.Linear(self.latent_dim, self.latent_dim * 4 * 4),
             nn.Linear(self.latent_dim * 4 * 4, self.latent_dim * 8 * 8),
-        )
+        )   # -> 128 * 128 image
 
-        #Upsampling blocks
+        # Upsampling blocks
         internal_dim = self.latent_dim
         i = 1
         while True:      

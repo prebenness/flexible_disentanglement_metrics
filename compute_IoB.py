@@ -4,6 +4,8 @@ from metrics.IoB_models import TensorReconstructor, VectorReconstructor
 import os
 import argparse
 
+from torchsummary import summary
+
 #Load the data directory and saving path
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', type=str, required=True, help='Path to the data file.')
@@ -71,6 +73,9 @@ def train_tensor_reconstructor(repr, target):
 def train_vector_reconstructor(repr, target):
     reconstructor = VectorReconstructor(input_dim=repr.shape[-1], output_dim=target.shape[-1])
     reconstructor.to(device)
+
+    summary(reconstructor, (repr.shape[-1],))
+
     for epoch in range(num_epochs):
         index = torch.randperm(train_num_samples)
         for i in range(num_itr_train):
