@@ -52,7 +52,7 @@ test_content_bias = torch.ones_like(test_content)
 test_style_bias = torch.ones_like(test_style)
 
 num_epochs = 40
-batch_size = 10
+batch_size = 64
 num_itr_train = int(train_num_samples / batch_size)
 
 

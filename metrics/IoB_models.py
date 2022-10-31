@@ -175,9 +175,6 @@ class VectorReconstructor(nn.Module):
 
     def test(self, train_input, ori_images):
         self.eval()
-
-        ori_images = self.target_padder(ori_images)
-
         reconstruction = self.DE(train_input)
         mse = self.l2_criterion(reconstruction, ori_images)
         self.train()
@@ -205,7 +202,7 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.model = []
         self.liner = []
-        self.latent_dim = 256
+        self.latent_dim = 64
         self.input_dim = input_dim
         output_channels = 3
         #Linear layers
