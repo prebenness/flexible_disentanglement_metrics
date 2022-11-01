@@ -144,10 +144,11 @@ class VectorReconstructor(nn.Module):
         new_output_dim = int(new_output_dim)
 
         self.output_dim = new_output_dim
-        target_padding = new_output_dim - output_dim
+        output_crop = new_output_dim - output_dim
+        # Negative padding => cropping
         ## left, right, top, bottom
-        pad = (target_padding, 0, target_padding, 0)
-        self.target_padder = nn.ZeroPad2d(pad)
+        crop = (-1 * output_crop, 0, -1 * output_crop, 0)
+        self.target_cropper = nn.ZeroPad2d(crop)
 
         lr = 0.0001
         self.DE = Decoder(input_dim=input_dim, output_dim=output_dim)
@@ -160,7 +161,7 @@ class VectorReconstructor(nn.Module):
         self.DE.apply(self.initialize_weights)
 
     def l2_criterion(self, inp, target):
-        target = self.target_padder(target)
+        inp = self.target_cropper(inp)
         return torch.mean(torch.abs(inp - target) ** 2)
 
     def initialize_weights(self, m):
@@ -202,7 +203,7 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.model = []
         self.liner = []
-        self.latent_dim = 64
+        self.latent_dim = 256
         self.input_dim = input_dim
         output_channels = 3
         #Linear layers
