@@ -70,7 +70,7 @@ def train_tensor_reconstructor(repr, target):
     num_itr_train = math.ceil(repr_train.shape[0] / batch_size)
 
     best_val_loss, num_no_improve = torch.inf, 0
-    best_model, best_epoch = copy.deepcopy(reconstructor), 0
+    best_state_dict, best_epoch = copy.deepcopy(reconstructor.state_dict()), 0
     for epoch in range(num_epochs):
         index = torch.randperm(repr_train.shape[0])
         for i in range(num_itr_train):
@@ -85,7 +85,7 @@ def train_tensor_reconstructor(repr, target):
         # Early stopping criterium
         if val_mse_loss < best_val_loss:
             best_val_loss = val_mse_loss
-            best_model = copy.deepcopy(reconstructor)
+            best_state_dict = copy.deepcopy(reconstructor.state_dict())
             best_epoch = epoch
             num_no_improve = 0
         else:
@@ -95,6 +95,8 @@ def train_tensor_reconstructor(repr, target):
             print(f'Validation loss stopped improving, stopping early and restoring best model from epoch {best_epoch}')
             break
 
+    best_model = VectorReconstructor(input_dim=repr.shape[-1], output_dim=target.shape[-1])
+    best_model.load_state_dict(best_state_dict)
     return best_model
 
 
@@ -110,7 +112,7 @@ def train_vector_reconstructor(repr, target):
     summary(reconstructor, (repr.shape[-1],))
 
     best_val_loss, num_no_improve = torch.inf, 0
-    best_model, best_epoch = copy.deepcopy(reconstructor), 0
+    best_state_dict, best_epoch = copy.deepcopy(reconstructor.state_dict()), 0
     for epoch in range(num_epochs):
         index = torch.randperm(repr_train.shape[0])
         for i in range(num_itr_train):
@@ -124,7 +126,7 @@ def train_vector_reconstructor(repr, target):
         # Early stopping criterium
         if val_mse_loss < best_val_loss:
             best_val_loss = val_mse_loss
-            best_model = copy.deepcopy(reconstructor)
+            best_state_dict = copy.deepcopy(reconstructor.state_dict())
             best_epoch = epoch
             num_no_improve = 0
         else:
@@ -134,6 +136,8 @@ def train_vector_reconstructor(repr, target):
             print(f'Validation loss stopped improving, stopping early and restoring best model from epoch {best_epoch}')
             break
     
+    best_model = VectorReconstructor(input_dim=repr.shape[-1], output_dim=target.shape[-1])
+    best_model.load_state_dict(best_state_dict)
     return best_model
 
 
