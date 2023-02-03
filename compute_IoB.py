@@ -18,7 +18,7 @@ opts = parser.parse_args()
 
 num_epochs = 500
 batch_size = 10
-early_stop_patience = 25
+early_stop_patience = 40
 
 gpu_num = opts.gpu
 dir_root = os.path.abspath(opts.root)
